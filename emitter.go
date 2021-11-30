@@ -33,22 +33,19 @@ type EmitterOpts struct {
 	Addr string
 }
 
+type BroadcastOpts struct {
+	nsp              string
+	broadcastChannel string
+	requestChannel   string
+}
+
 type Emitter struct {
 	Key       string
 	rooms     []string
 	flags     map[string]interface{}
 	redisPool *redis.Pool
-}
 
-func getKey(key, nsp string) string {
-	var _key string
-	if key == "" {
-		_key = fmt.Sprintf("socket.io#%s#", nsp)
-	} else {
-		_key = fmt.Sprintf("socket.io#/#%s#", key)
-	}
-
-	return _key
+	*BroadcastOpts
 }
 
 // TODO: return error too here
@@ -93,12 +90,20 @@ func initRedisConnPool(opts *EmitterOpts) *redis.Pool {
 //    Port:6379,
 // })
 func NewEmitter(opts *EmitterOpts) (*Emitter, error) {
+	if opts.Key == "" {
+		opts.Key = "socket.io"
+	}
+
 	nsp := "/"
-	key := getKey(opts.Key, nsp)
+	broadcastOpts := &BroadcastOpts{
+		broadcastChannel: fmt.Sprintf("%s#%s#", opts.Key, nsp),
+		requestChannel:   fmt.Sprintf("%s-request#%s#", opts.Key, nsp),
+	}
 
 	emitter := &Emitter{
-		Key:       key,
-		redisPool: initRedisConnPool(opts),
+		Key:           opts.Key,
+		redisPool:     initRedisConnPool(opts),
+		BroadcastOpts: broadcastOpts,
 	}
 	return emitter, nil
 }
@@ -208,10 +213,10 @@ func HasBinary(dataSlice ...interface{}) bool {
 	return false
 }
 
-func publish(emitter *Emitter, buf *bytes.Buffer) {
-	c := emitter.redisPool.Get()
+func (e *Emitter) publish(channel string, buf *bytes.Buffer) {
+	c := e.redisPool.Get()
 	defer c.Close()
-	_, err := c.Do("PUBLISH", emitter.Key, buf)
+	_, err := c.Do("PUBLISH", channel, buf)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: %+v", err)
 	}
@@ -236,9 +241,13 @@ func (emitter *Emitter) emit(packet map[string]interface{}) (*Emitter, error) {
 		return nil, error
 	}
 
-	emitter.rooms = []string{}
 	emitter.flags = make(map[string]interface{})
 
-	publish(emitter, buf)
+	channel := emitter.BroadcastOpts.broadcastChannel
+	if len(emitter.rooms) == 1 {
+		channel = fmt.Sprintf("%s%s#", emitter.broadcastChannel, emitter.rooms[0])
+	}
+
+	emitter.publish(channel, buf)
 	return emitter, nil
 }
