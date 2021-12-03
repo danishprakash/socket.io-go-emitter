@@ -3,7 +3,6 @@ package SocketIO
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"strconv"
 	"time"
 
@@ -47,6 +46,17 @@ type Emitter struct {
 	redisPool *redis.Pool
 
 	*BroadcastOpts
+}
+
+func (e *Emitter) PingRedis() error {
+	conn := e.redisPool.Get()
+	defer conn.Close() // Test the connection
+
+	_, err := conn.Do("PING")
+	if err != nil {
+		return fmt.Errorf("Can't connect to Redis: %+v", err)
+	}
+	return nil
 }
 
 func initRedisConnPool(opts *EmitterOpts) *redis.Pool {
@@ -156,7 +166,7 @@ func (emitter *Emitter) Of(namespace string) *Emitter {
 // send the packet by string, json, etc
 // Usage:
 // Emit("event name", "data")
-func (emitter *Emitter) Emit(event string, data ...interface{}) (*Emitter, error) {
+func (emitter *Emitter) Emit(event string, data ...interface{}) error {
 	d := []interface{}{event}
 	d = append(d, data...)
 	eventType := EVENT
@@ -173,7 +183,7 @@ func (emitter *Emitter) Emit(event string, data ...interface{}) (*Emitter, error
 // send the packet by binary
 // Usage:
 // EmitBinary("event name", []byte{0x01, 0x02, 0x03})
-func (emitter *Emitter) EmitBinary(event string, data ...interface{}) (*Emitter, error) {
+func (emitter *Emitter) EmitBinary(event string, data ...interface{}) error {
 	d := []interface{}{event}
 	d = append(d, data...)
 	packet := map[string]interface{}{
@@ -214,16 +224,18 @@ func HasBinary(dataSlice ...interface{}) bool {
 	return false
 }
 
-func (e *Emitter) publish(channel string, buf *bytes.Buffer) {
+func (e *Emitter) publish(channel string, buf *bytes.Buffer) error {
 	c := e.redisPool.Get()
 	defer c.Close()
 	_, err := c.Do("PUBLISH", channel, buf)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: %+v", err)
+		return fmt.Errorf("ERROR: %+v", err)
 	}
+
+	return nil
 }
 
-func (emitter *Emitter) emit(packet map[string]interface{}) (*Emitter, error) {
+func (emitter *Emitter) emit(packet map[string]interface{}) error {
 	if emitter.flags["nsp"] != nil {
 		packet["nsp"] = emitter.flags["nsp"]
 		delete(emitter.flags, "nsp")
@@ -239,7 +251,7 @@ func (emitter *Emitter) emit(packet map[string]interface{}) (*Emitter, error) {
 	enc := msgpack.NewEncoder(buf)
 	error := enc.Encode(pack)
 	if error != nil {
-		return nil, error
+		return error
 	}
 
 	emitter.flags = make(map[string]interface{})
@@ -249,6 +261,5 @@ func (emitter *Emitter) emit(packet map[string]interface{}) (*Emitter, error) {
 		channel = fmt.Sprintf("%s%s#", emitter.broadcastChannel, emitter.rooms[0])
 	}
 
-	emitter.publish(channel, buf)
-	return emitter, nil
+	return emitter.publish(channel, buf)
 }
