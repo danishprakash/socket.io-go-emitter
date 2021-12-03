@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/garyburd/redigo/redis"
+	"github.com/sirupsen/logrus"
 	"github.com/vmihailenco/msgpack"
 )
 
@@ -48,7 +49,6 @@ type Emitter struct {
 	*BroadcastOpts
 }
 
-// TODO: return error too here
 func initRedisConnPool(opts *EmitterOpts) *redis.Pool {
 	if opts.Host == "" {
 		// return err
@@ -69,6 +69,7 @@ func initRedisConnPool(opts *EmitterOpts) *redis.Pool {
 		Dial: func() (redis.Conn, error) {
 			c, err := redis.Dial("tcp", addr)
 			if err != nil {
+				logrus.Errorf("Failed to init redis pool: %+v", err)
 				return nil, err
 			}
 
