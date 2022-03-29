@@ -129,13 +129,19 @@ func (emitter *Emitter) Broadcast() *Emitter {
  *
  * @param {String} room
  */
-func (emitter *Emitter) In(room string) *Emitter {
+func (emitter *Emitter) InRooms(room string) *Emitter {
 	for _, r := range emitter.rooms {
 		if r == room {
 			return emitter
 		}
 	}
 	emitter.rooms = append(emitter.rooms, room)
+	return emitter
+}
+
+// In emits msg to a specific room
+func (emitter *Emitter) In(room string) *Emitter {
+	emitter.rooms = []string{room}
 	return emitter
 }
 
